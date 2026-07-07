@@ -408,9 +408,9 @@ class ExcelToJsonConverterApp:
             # Automatically populate Desde/Hasta range
             max_r = reader.max_row
             self.entry_from.delete(0, tk.END)
-            self.entry_from.insert(0, "2") # row 2 is the first data row
+            self.entry_from.insert(0, "1") # 1 corresponds to the first data row (Excel row 2)
             self.entry_to.delete(0, tk.END)
-            self.entry_to.insert(0, str(max_r))
+            self.entry_to.insert(0, str(max_r - 1) if max_r > 1 else "0")
             
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo leer el archivo Excel:\n{e}")
@@ -447,17 +447,17 @@ class ExcelToJsonConverterApp:
             messagebox.showerror("Error", f"No se pudo abrir el archivo Excel:\n{e}")
             return
             
-        start_row = 2
-        end_row = max_r
+        start_row = 1
+        end_row = max_r - 1
         
         if not self.all_rows_var.get():
             try:
                 start_row = int(self.entry_from.get())
                 end_row = int(self.entry_to.get())
-                if start_row < 2 or end_row < start_row:
+                if start_row < 1 or end_row < start_row:
                     raise ValueError
             except ValueError:
-                messagebox.showerror("Error", "Rango de filas inválido. 'Desde' debe ser >= 2, y 'Hasta' >= 'Desde'.")
+                messagebox.showerror("Error", "Rango de filas inválido. 'Desde' debe ser >= 1, y 'Hasta' >= 'Desde'.")
                 return
                 
         # Ask output save file path
@@ -491,7 +491,8 @@ class ExcelToJsonConverterApp:
             app_key_val = self.fields["app_key"].get()
             
             # For each row, process and create JSON
-            for r in range(start_row, min(end_row + 1, max_r + 1)):
+            for r_data in range(start_row, min(end_row + 1, max_r)):
+                r = r_data + 1
                 row_dict = {}
                 for idx, col_name in enumerate(headers):
                     if col_name:
