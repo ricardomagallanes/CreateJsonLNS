@@ -163,6 +163,7 @@ class ExcelToJsonConverterApp:
         self.columns_list = []
         self.last_focused_entry = None
         self.all_rows_var = tk.BooleanVar(value=True)
+        self.active_reader = None
         
         # Setup UI
         self.create_widgets()
@@ -262,21 +263,41 @@ class ExcelToJsonConverterApp:
         # Row Range Filter Frame
         filter_frame = tk.LabelFrame(left_frame, text=" Rango de Filas ", bg=self.bg_color, font=("Segoe UI", 9, "bold"), pady=10, padx=10)
         filter_frame.grid(row=2, column=0, sticky="ew", pady=(15, 0))
+        filter_frame.columnconfigure(0, weight=1)
         filter_frame.columnconfigure(1, weight=1)
-        filter_frame.columnconfigure(3, weight=1)
         
         chk_all = tk.Checkbutton(filter_frame, text="Todo el archivo", variable=self.all_rows_var, command=self.toggle_range_inputs, bg=self.bg_color, font=("Segoe UI", 9))
-        chk_all.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
+        chk_all.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
         
-        lbl_from = tk.Label(filter_frame, text="Desde:", bg=self.bg_color, font=("Segoe UI", 9))
-        lbl_from.grid(row=1, column=0, sticky="w")
-        self.entry_from = tk.Entry(filter_frame, font=("Segoe UI", 9), width=8)
-        self.entry_from.grid(row=1, column=1, sticky="w", padx=5)
+        # Sub-frame for inputs (arranged vertically)
+        inputs_subframe = tk.Frame(filter_frame, bg=self.bg_color)
+        inputs_subframe.grid(row=1, column=0, sticky="nw")
         
-        lbl_to = tk.Label(filter_frame, text="Hasta:", bg=self.bg_color, font=("Segoe UI", 9))
-        lbl_to.grid(row=1, column=2, sticky="w")
-        self.entry_to = tk.Entry(filter_frame, font=("Segoe UI", 9), width=8)
-        self.entry_to.grid(row=1, column=3, sticky="w", padx=5)
+        lbl_from = tk.Label(inputs_subframe, text="Desde:", bg=self.bg_color, font=("Segoe UI", 9))
+        lbl_from.grid(row=0, column=0, sticky="w", pady=2)
+        self.entry_from_var = tk.StringVar()
+        self.entry_from_var.trace_add("write", lambda *args: self.update_previews())
+        self.entry_from = tk.Entry(inputs_subframe, textvariable=self.entry_from_var, font=("Segoe UI", 9), width=8)
+        self.entry_from.grid(row=0, column=1, sticky="w", padx=5, pady=2)
+        
+        lbl_to = tk.Label(inputs_subframe, text="Hasta:", bg=self.bg_color, font=("Segoe UI", 9))
+        lbl_to.grid(row=1, column=0, sticky="w", pady=2)
+        self.entry_to_var = tk.StringVar()
+        self.entry_to_var.trace_add("write", lambda *args: self.update_previews())
+        self.entry_to = tk.Entry(inputs_subframe, textvariable=self.entry_to_var, font=("Segoe UI", 9), width=8)
+        self.entry_to.grid(row=1, column=1, sticky="w", padx=5, pady=2)
+        
+        # Sub-frame for previews (arranged vertically to the right of inputs)
+        preview_subframe = tk.LabelFrame(filter_frame, text=" Vista Previa (Name) ", bg=self.bg_color, font=("Segoe UI", 8, "italic"), pady=5, padx=8)
+        preview_subframe.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        preview_subframe.rowconfigure(0, weight=1)
+        preview_subframe.rowconfigure(1, weight=1)
+        
+        self.lbl_preview_from = tk.Label(preview_subframe, text="Desde: -", bg=self.bg_color, font=("Segoe UI", 9), fg="#4b5563", anchor="w", justify="left")
+        self.lbl_preview_from.grid(row=0, column=0, sticky="ew")
+        
+        self.lbl_preview_to = tk.Label(preview_subframe, text="Hasta: -", bg=self.bg_color, font=("Segoe UI", 9), fg="#4b5563", anchor="w", justify="left")
+        self.lbl_preview_to.grid(row=1, column=0, sticky="ew")
         
         # Initialize disabled state for range input
         self.toggle_range_inputs()
@@ -362,6 +383,7 @@ class ExcelToJsonConverterApp:
             ent.bind("<FocusIn>", lambda e, w=ent: self.set_focused_entry(w))
             self.compound_fields[key] = ent
             
+        self.compound_fields["name"].bind("<KeyRelease>", lambda e: self.update_previews())
         sec_comp.columnconfigure(1, weight=1)
         
         # 4. Bottom Action Button
@@ -375,9 +397,22 @@ class ExcelToJsonConverterApp:
         if self.all_rows_var.get():
             self.entry_from.config(state="disabled")
             self.entry_to.config(state="disabled")
+            excel_path = self.excel_file_path.get()
+            if excel_path:
+                try:
+                    if hasattr(self, "active_reader") and self.active_reader:
+                        max_r = self.active_reader.max_row
+                    else:
+                        self.active_reader = SimpleExcelReader(excel_path)
+                        max_r = self.active_reader.max_row
+                    self.entry_from_var.set("1")
+                    self.entry_to_var.set(str(max_r - 1) if max_r > 1 else "0")
+                except Exception:
+                    pass
         else:
             self.entry_from.config(state="normal")
             self.entry_to.config(state="normal")
+        self.update_previews()
             
     def browse_excel(self):
         filepath = filedialog.askopenfilename(
@@ -407,10 +442,10 @@ class ExcelToJsonConverterApp:
                 
             # Automatically populate Desde/Hasta range
             max_r = reader.max_row
-            self.entry_from.delete(0, tk.END)
-            self.entry_from.insert(0, "1") # 1 corresponds to the first data row (Excel row 2)
-            self.entry_to.delete(0, tk.END)
-            self.entry_to.insert(0, str(max_r - 1) if max_r > 1 else "0")
+            self.active_reader = reader
+            self.entry_from_var.set("1") # 1 corresponds to the first data row (Excel row 2)
+            self.entry_to_var.set(str(max_r - 1) if max_r > 1 else "0")
+            self.update_previews()
             
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo leer el archivo Excel:\n{e}")
@@ -420,6 +455,7 @@ class ExcelToJsonConverterApp:
         if selection and self.last_focused_entry:
             col_name = self.cols_listbox.get(selection[0])
             self.last_focused_entry.insert(tk.INSERT, f"{{{col_name}}}")
+            self.update_previews()
             
     def resolve_placeholders(self, template_str, row_dict):
         """Replaces placeholders in the format {COLUMN_NAME} with row values."""
@@ -429,6 +465,63 @@ class ExcelToJsonConverterApp:
             if placeholder in resolved:
                 resolved = resolved.replace(placeholder, str(val) if val is not None else "")
         return resolved
+
+    def update_previews(self):
+        excel_path = self.excel_file_path.get()
+        if not excel_path:
+            self.lbl_preview_from.config(text="Desde: -")
+            self.lbl_preview_to.config(text="Hasta: -")
+            return
+            
+        try:
+            if not hasattr(self, "active_reader") or not self.active_reader or self.active_reader.filepath != excel_path:
+                self.active_reader = SimpleExcelReader(excel_path)
+            reader = self.active_reader
+            max_r = reader.max_row
+        except Exception:
+            self.lbl_preview_from.config(text="Desde: -")
+            self.lbl_preview_to.config(text="Hasta: -")
+            return
+            
+        try:
+            start_row = int(self.entry_from_var.get())
+        except ValueError:
+            start_row = None
+            
+        try:
+            end_row = int(self.entry_to_var.get())
+        except ValueError:
+            end_row = None
+            
+        headers = []
+        if reader.max_row > 0:
+            first_row = reader.rows[0]
+            for val in first_row:
+                headers.append(str(val).strip() if val is not None else "")
+                
+        def get_row_name(r_data):
+            if r_data is None or r_data < 1 or r_data >= max_r:
+                return "-"
+            r_excel = r_data + 1
+            row_dict = {}
+            for idx, col_name in enumerate(headers):
+                if col_name:
+                    val = reader.cell_value(r_excel, idx + 1)
+                    row_dict[col_name] = val
+            name_formula = self.compound_fields["name"].get()
+            return self.resolve_placeholders(name_formula, row_dict)
+
+        name_from = get_row_name(start_row)
+        name_to = get_row_name(end_row)
+        
+        # Limit preview display size to prevent GUI overflow
+        if len(name_from) > 28:
+            name_from = name_from[:25] + "..."
+        if len(name_to) > 28:
+            name_to = name_to[:25] + "..."
+            
+        self.lbl_preview_from.config(text=f"Desde: {name_from}")
+        self.lbl_preview_to.config(text=f"Hasta: {name_to}")
         
     def export_json(self):
         excel_path = self.excel_file_path.get()
