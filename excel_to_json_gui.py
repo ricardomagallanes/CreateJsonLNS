@@ -122,6 +122,14 @@ class SimpleExcelReader:
         return len(self.rows)
 
     @property
+    def last_non_empty_row(self):
+        for r_idx in range(len(self.rows) - 1, -1, -1):
+            row_data = self.rows[r_idx]
+            if any(val is not None and str(val).strip() != "" for val in row_data):
+                return r_idx + 1
+        return 0
+
+    @property
     def max_column(self):
         if not self.rows:
             return 0
@@ -263,41 +271,31 @@ class ExcelToJsonConverterApp:
         # Row Range Filter Frame
         filter_frame = tk.LabelFrame(left_frame, text=" Rango de Filas ", bg=self.bg_color, font=("Segoe UI", 9, "bold"), pady=10, padx=10)
         filter_frame.grid(row=2, column=0, sticky="ew", pady=(15, 0))
-        filter_frame.columnconfigure(0, weight=1)
         filter_frame.columnconfigure(1, weight=1)
+        filter_frame.columnconfigure(2, weight=4) # Give ample space to previews
         
         chk_all = tk.Checkbutton(filter_frame, text="Todo el archivo", variable=self.all_rows_var, command=self.toggle_range_inputs, bg=self.bg_color, font=("Segoe UI", 9))
-        chk_all.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        chk_all.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         
-        # Sub-frame for inputs (arranged vertically)
-        inputs_subframe = tk.Frame(filter_frame, bg=self.bg_color)
-        inputs_subframe.grid(row=1, column=0, sticky="nw")
-        
-        lbl_from = tk.Label(inputs_subframe, text="Desde:", bg=self.bg_color, font=("Segoe UI", 9))
-        lbl_from.grid(row=0, column=0, sticky="w", pady=2)
+        lbl_from = tk.Label(filter_frame, text="Desde:", bg=self.bg_color, font=("Segoe UI", 9))
+        lbl_from.grid(row=1, column=0, sticky="w", pady=3)
         self.entry_from_var = tk.StringVar()
         self.entry_from_var.trace_add("write", lambda *args: self.update_previews())
-        self.entry_from = tk.Entry(inputs_subframe, textvariable=self.entry_from_var, font=("Segoe UI", 9), width=8)
-        self.entry_from.grid(row=0, column=1, sticky="w", padx=5, pady=2)
+        self.entry_from = tk.Entry(filter_frame, textvariable=self.entry_from_var, font=("Segoe UI", 9), width=8)
+        self.entry_from.grid(row=1, column=1, sticky="w", padx=5, pady=3)
         
-        lbl_to = tk.Label(inputs_subframe, text="Hasta:", bg=self.bg_color, font=("Segoe UI", 9))
-        lbl_to.grid(row=1, column=0, sticky="w", pady=2)
+        self.lbl_preview_from = tk.Label(filter_frame, text="-> -", bg=self.bg_color, font=("Segoe UI", 9, "italic"), fg="#4b5563", anchor="w", justify="left")
+        self.lbl_preview_from.grid(row=1, column=2, sticky="w", padx=10, pady=3)
+        
+        lbl_to = tk.Label(filter_frame, text="Hasta:", bg=self.bg_color, font=("Segoe UI", 9))
+        lbl_to.grid(row=2, column=0, sticky="w", pady=3)
         self.entry_to_var = tk.StringVar()
         self.entry_to_var.trace_add("write", lambda *args: self.update_previews())
-        self.entry_to = tk.Entry(inputs_subframe, textvariable=self.entry_to_var, font=("Segoe UI", 9), width=8)
-        self.entry_to.grid(row=1, column=1, sticky="w", padx=5, pady=2)
+        self.entry_to = tk.Entry(filter_frame, textvariable=self.entry_to_var, font=("Segoe UI", 9), width=8)
+        self.entry_to.grid(row=2, column=1, sticky="w", padx=5, pady=3)
         
-        # Sub-frame for previews (arranged vertically to the right of inputs)
-        preview_subframe = tk.LabelFrame(filter_frame, text=" Vista Previa (Name) ", bg=self.bg_color, font=("Segoe UI", 8, "italic"), pady=5, padx=8)
-        preview_subframe.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
-        preview_subframe.rowconfigure(0, weight=1)
-        preview_subframe.rowconfigure(1, weight=1)
-        
-        self.lbl_preview_from = tk.Label(preview_subframe, text="Desde: -", bg=self.bg_color, font=("Segoe UI", 9), fg="#4b5563", anchor="w", justify="left")
-        self.lbl_preview_from.grid(row=0, column=0, sticky="ew")
-        
-        self.lbl_preview_to = tk.Label(preview_subframe, text="Hasta: -", bg=self.bg_color, font=("Segoe UI", 9), fg="#4b5563", anchor="w", justify="left")
-        self.lbl_preview_to.grid(row=1, column=0, sticky="ew")
+        self.lbl_preview_to = tk.Label(filter_frame, text="-> -", bg=self.bg_color, font=("Segoe UI", 9, "italic"), fg="#4b5563", anchor="w", justify="left")
+        self.lbl_preview_to.grid(row=2, column=2, sticky="w", padx=10, pady=3)
         
         # Initialize disabled state for range input
         self.toggle_range_inputs()
@@ -401,12 +399,13 @@ class ExcelToJsonConverterApp:
             if excel_path:
                 try:
                     if hasattr(self, "active_reader") and self.active_reader:
-                        max_r = self.active_reader.max_row
+                        reader = self.active_reader
                     else:
                         self.active_reader = SimpleExcelReader(excel_path)
-                        max_r = self.active_reader.max_row
+                        reader = self.active_reader
+                    last_ne = reader.last_non_empty_row
                     self.entry_from_var.set("1")
-                    self.entry_to_var.set(str(max_r - 1) if max_r > 1 else "0")
+                    self.entry_to_var.set(str(last_ne - 1) if last_ne > 1 else "0")
                 except Exception:
                     pass
         else:
@@ -441,10 +440,10 @@ class ExcelToJsonConverterApp:
                 self.cols_listbox.insert(tk.END, col)
                 
             # Automatically populate Desde/Hasta range
-            max_r = reader.max_row
+            last_ne = reader.last_non_empty_row
             self.active_reader = reader
             self.entry_from_var.set("1") # 1 corresponds to the first data row (Excel row 2)
-            self.entry_to_var.set(str(max_r - 1) if max_r > 1 else "0")
+            self.entry_to_var.set(str(last_ne - 1) if last_ne > 1 else "0")
             self.update_previews()
             
         except Exception as e:
@@ -520,8 +519,8 @@ class ExcelToJsonConverterApp:
         if len(name_to) > 28:
             name_to = name_to[:25] + "..."
             
-        self.lbl_preview_from.config(text=f"Desde: {name_from}")
-        self.lbl_preview_to.config(text=f"Hasta: {name_to}")
+        self.lbl_preview_from.config(text=f"-> {name_from}")
+        self.lbl_preview_to.config(text=f"-> {name_to}")
         
     def export_json(self):
         excel_path = self.excel_file_path.get()
@@ -535,13 +534,15 @@ class ExcelToJsonConverterApp:
         # Determine range
         try:
             reader = SimpleExcelReader(excel_path)
+            self.active_reader = reader
             max_r = reader.max_row
+            last_ne = reader.last_non_empty_row
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir el archivo Excel:\n{e}")
             return
             
         start_row = 1
-        end_row = max_r - 1
+        end_row = last_ne - 1
         
         if not self.all_rows_var.get():
             try:
